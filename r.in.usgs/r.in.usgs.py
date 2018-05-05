@@ -3,7 +3,7 @@
 
 #MODULE:     r.in.usgs
 #
-#AUTHOR:     Zechariah Krautwurst
+#AUTHOR:     Zechariah Krautwurst, Anna Petrasova
 #
 #MENTORS:    Anna Petrasova
 #            Vaclav Petras
@@ -23,31 +23,41 @@
 #% keyword: USGS
 #% keyword: NED
 #% keyword: NLCD
+#% keyword: NAIP
 #%end
 
 #%flag
 #% key: i
-#% label: Return USGS data information without downloading files
 #% description: Return USGS data information without downloading files
-#% guisection: USGS Data Selection
 #%end
 
 #%option
 #% key: product
 #% required: yes
-#% options: ned, nlcd
+#% options: ned,nlcd,naip
 #% label: USGS data product
 #% description: Available USGS data products to query
-#% guisection: USGS Data Selection
+#%end
+
+#%option G_OPT_R_OUTPUT
+#% key: output_name
+#% required: yes
+#%end
+
+#%option G_OPT_M_DIR
+#% key: output_directory
+#% required: yes
+#% description: Directory for USGS data download and processing
 #%end
 
 #%option
 #% key: ned_dataset
 #% required: no
-#% options: 1 arc-second, 1/3 arc-second, 1/9 arc-second
-#% answer: 1/3 arc-second
+#% options: ned1sec, ned13sec, ned19sec
+#% answer: ned1sec
 #% label: NED dataset
 #% description: Available NED datasets to query
+#% descriptions: ned1sec;NED 1 arc-second;ned13sec;NED 1/3 arc-second;ned19sec;NED 1/9 arc-second
 #% guisection: NED
 #%end
 
@@ -65,47 +75,12 @@
 #%option
 #% key: nlcd_subset
 #% required: no
-#% options: land_cover, impervious, canopy
-#% answer: land_cover
+#% options: landcover, impervious, canopy
+#% answer: landcover
 #% label: NLCD subset
 #% description: Available NLCD subsets to query
-#% descriptions: impervious;Percent Developed Imperviousness;canopy;Percent Tree Canopy;land_cover;Land Cover
+#% descriptions: impervious;Percent Developed Imperviousness;canopy;Percent Tree Canopy;landcover;Land Cover
 #% guisection: NLCD
-#%end
-
-## Currently unavailable ##
-##%option
-##% key: naip_dataset
-##% required: no
-##% options: Imagery - 1 meter (NAIP)
-##% answer: Imagery - 1 meter (NAIP)
-##% label: NAIP dataset
-##% description: Available NAIP datasets to query
-##% guisection: NAIP
-##%end
-
-## Currently unavailable ##
-##%option
-##% key: ustopo_dataset
-##% required: no
-##% options: US Topo Current, US Topo Historical
-##% answer: US Topo Current
-##% label: US Topo Data
-##% description: Available UStopo datasets to query
-##% guisection: USTopo
-##%end
-
-#%option G_OPT_M_DIR
-#% key: output_directory
-#% required: yes
-#% description: Directory for USGS data download and processing
-#% guisection: Download Options
-#%end
-
-#%option G_OPT_R_OUTPUT
-#% key: output_name
-#% required: yes
-#% guisection: Download Options
 #%end
 
 #%option
@@ -117,14 +92,11 @@
 #% description: Resampling method to use
 #% descriptions: default;default method based on product;nearest;nearest neighbor;bilinear;bilinear interpolation;bicubic;bicubic interpolation;lanczos;lanczos filter;bilinear_f;bilinear interpolation with fallback;bicubic_f;bicubic interpolation with fallback;lanczos_f;lanczos filter with fallback
 #% answer: default
-#% guisection: Download Options
 #%end
 
 #%flag
 #% key: k
-#% label: Keep extracted files after GRASS import and patch
 #% description: Keep extracted files after GRASS import and patch
-#% guisection: Download Options
 #%end
 
 #%rules
@@ -144,82 +116,67 @@ from grass.exceptions import CalledModuleError
 
 cleanup_list = []
 
+
 def main():
     # Hard-coded parameters needed for USGS datasets
-    # NED and NLCD datasets fully functional
-    # NAIP and UStopo not functional
     usgs_product_dict = {
-        "ned":{
-                'product':'National Elevation Dataset (NED)',
-                'dataset':{
-                        '1 arc-second': (1. / 3600, 30, 100),
-                        '1/3 arc-second': (1. / 3600 / 3, 10, 30),
-                        '1/9 arc-second': (1. / 3600 / 9, 3, 10)
+        "ned": {
+                'product': 'National Elevation Dataset (NED)',
+                'dataset': {
+                        'ned1sec': (1. / 3600, 30, 100),
+                        'ned13sec': (1. / 3600 / 3, 10, 30),
+                        'ned19sec': (1. / 3600 / 9, 3, 10)
                         },
-                'subset':{},
-                'extent':[
+                'subset': {},
+                'extent': [
                         '1 x 1 degree',
                         '15 x 15 minute'
                          ],
-                'format':'IMG',
-                'extension':'img',
-                'zip':True,
-                'srs':'wgs84',
-                'srs_proj4':"+proj=longlat +ellps=GRS80 +datum=NAD83 +nodefs",
-                'interpolation':'bilinear',
-                'url_split':'/'
+                'format': 'IMG',
+                'extension': 'img',
+                'zip': True,
+                'srs': 'wgs84',
+                'srs_proj4': "+proj=longlat +ellps=GRS80 +datum=NAD83 +nodefs",
+                'interpolation': 'bilinear',
+                'url_split': '/'
                 },
-        "nlcd":{
-                'product':'National Land Cover Database (NLCD)',
-                'dataset':{
+        "nlcd": {
+                'product': 'National Land Cover Database (NLCD)',
+                'dataset': {
                         'National Land Cover Database (NLCD) - 2001': (1. / 3600, 30, 100),
                         'National Land Cover Database (NLCD) - 2006': (1. / 3600, 30, 100),
                         'National Land Cover Database (NLCD) - 2011': (1. / 3600, 30, 100)
                         },
-                'subset':{
+                'subset': {
                         'Percent Developed Imperviousness',
                         'Percent Tree Canopy',
                         'Land Cover'
                         },
                 'extent': ['3 x 3 degree'],
-                'format':'GeoTIFF',
-                'extension':'tif',
-                'zip':True,
-                'srs':'wgs84',
-                'srs_proj4':"+proj=longlat +ellps=GRS80 +datum=NAD83 +nodefs",
-                'interpolation':'nearest',
-                'url_split':'&FNAME='
+                'format': 'GeoTIFF',
+                'extension': 'tif',
+                'zip': True,
+                'srs': 'wgs84',
+                'srs_proj4': "+proj=longlat +ellps=GRS80 +datum=NAD83 +nodefs",
+                'interpolation': 'nearest',
+                'url_split': '/'
                 },
-        "naip":{
-                'product':'USDA National Agriculture Imagery Program (NAIP)',
-                'dataset':{
+        "naip": {
+                'product': 'USDA National Agriculture Imagery Program (NAIP)',
+                'dataset': {
                         'Imagery - 1 meter (NAIP)': (1. / 3600 / 27, 1, 3)},
-                'subset':{},
-                'extent':[
+                'subset': {},
+                'extent': [
                         '3.75 x 3.75 minute',
                          ],
-                'format':'JPEG2000',
-                'extension':'jp2',
-                'zip':False,
-                'srs':'wgs84',
-                'srs_proj4':"+proj=longlat +ellps=GRS80 +datum=NAD83 +nodefs",
-                'interpolation':'nearest',
-                'url_split':'/'
-                },
-        "ustopo":{
-            'product':'US Topo',
-            'dataset':{
-                    'US Topo Current':(1. / 3600 / 108, 4, 12),
-                    'US Topo Historical':(1. / 3600 / 108, 4, 12)},
-            'subset':{},
-            'extent':['7.5 x 7.5 minute'],
-            'format':'GeoPDF',
-            'extension':'pdf',
-            'zip':False,
-            'srs':'wgs84',
-            'srs_proj4':"+proj=longlat +ellps=GRS80 +datum=NAD83 +nodefs",
-            'interpolation':'nearest',
-            'url_split':'/'}
+                'format': 'JPEG2000',
+                'extension': 'jp2',
+                'zip': False,
+                'srs': 'wgs84',
+                'srs_proj4': "+proj=longlat +ellps=GRS80 +datum=NAD83 +nodefs",
+                'interpolation': 'nearest',
+                'url_split': '/'
+                }
             }
 
     # Set GRASS GUI options and flags to python variables
@@ -241,13 +198,17 @@ def main():
     # Parameter assignments for each dataset
     if gui_product == 'ned':
         gui_dataset = options['ned_dataset']
-        product_tag = product + " " + gui_dataset
-        if options['ned_dataset'] == '1 arc-second':
+        ned_api_name = ''
+        if options['ned_dataset'] == 'ned1sec':
             ned_data_abbrv = 'ned_1arc_'
-        if options['ned_dataset'] == '1/3 arc-second':
+            ned_api_name = '1 arc-second'
+        if options['ned_dataset'] == 'ned13sec':
             ned_data_abbrv = 'ned_13arc_'
-        if options['ned_dataset'] == '1/9 arc-second':
+            ned_api_name = '1/3 arc-second'
+        if options['ned_dataset'] == 'ned19sec':
             ned_data_abbrv = 'ned_19arc_'
+            ned_api_name = '1/9 arc-second'
+        product_tag = product + " " + ned_api_name
 
     if gui_product == 'nlcd':
         gui_dataset = options['nlcd_dataset']
@@ -257,8 +218,8 @@ def main():
             gui_dataset = 'National Land Cover Database (NLCD) - 2006'
         if options['nlcd_dataset'] == 'nlcd2011':
             gui_dataset = 'National Land Cover Database (NLCD) - 2011'
-        
-        if options['nlcd_subset'] == 'land_cover':
+
+        if options['nlcd_subset'] == 'landcover':
             gui_subset = 'Land Cover'
         if options['nlcd_subset'] == 'impervious':
             gui_subset = 'Percent Developed Imperviousness'
@@ -267,13 +228,9 @@ def main():
         product_tag = gui_dataset
 
     if gui_product == 'naip':
-        gui_dataset = options['naip_dataset']
+        gui_dataset = 'Imagery - 1 meter (NAIP)'
         product_tag = nav_string['product']
 
-    if gui_product == 'ustopo':
-        gui_dataset = options['ustopo_dataset']
-        product_tag = nav_string['product']
-    
     # Assigning further parameters from GUI
     gui_output_layer = options['output_name']
     gui_resampling_method = options['resampling_method']
@@ -302,11 +259,11 @@ def main():
     # Get coordinates for current GRASS computational region and convert to USGS SRS
     gregion = gscript.region()
     min_coords = gscript.read_command('m.proj', coordinates=(gregion['w'], gregion['s']),
-                                                proj_out=product_proj4, separator='comma',
-                                                flags='d')
+                                      proj_out=product_proj4, separator='comma',
+                                      flags='d')
     max_coords = gscript.read_command('m.proj', coordinates=(gregion['e'], gregion['n']),
-                                                proj_out=product_proj4, separator='comma',
-                                                flags='d')
+                                      proj_out=product_proj4, separator='comma',
+                                      flags='d')
     min_list = min_coords.split(',')[:2]
     max_list = max_coords.split(',')[:2]
     list_bbox = min_list + max_list
@@ -326,17 +283,16 @@ def main():
     TNM_API_URL = base_TNM + datasets_TNM + bbox_TNM + prod_format_TNM
     if gui_product == 'nlcd':
         TNM_API_URL += "&prodExtents={0}".format(prod_extent)
-
     gscript.verbose("TNM API Query URL:\t{0}".format(TNM_API_URL))
 
     # Query TNM API
     try:
         TNM_API_GET = urllib2.urlopen(TNM_API_URL, timeout=12)
     except urllib2.URLError:
-        gscript.fatal("USGS TNM API query has timed out. Check network configuration. Please try again.")
+        gscript.fatal(_("USGS TNM API query has timed out. Check network configuration. Please try again."))
     except:
-        gscript.fatal("USGS TNM API query has timed out. Check network configuration. Please try again.")
-    
+        gscript.fatal(_("USGS TNM API query has timed out. Check network configuration. Please try again."))
+
     # Parse return JSON object from API query
     try:
         return_JSON = json.load(TNM_API_GET)
@@ -346,9 +302,9 @@ def main():
             gscript.fatal(api_error_msg)
 
     except:
-        gscript.fatal("Unable to load USGS JSON object.")
-    
-    # Functions down_list() and exist_list() used to determine 
+        gscript.fatal(_("Unable to load USGS JSON object."))
+
+    # Functions down_list() and exist_list() used to determine
     # existing files and those that need to be downloaded.
     def down_list():
         dwnld_url.append(TNM_file_URL)
@@ -439,12 +395,12 @@ def main():
                         tiles_needed_count += 1
                         down_list()
                         continue
-    
+
     # return fatal error if API query returns no results for GUI input
     elif tile_API_count == 0:
-        gscript.fatal("TNM API ERROR or Zero tiles available for given input parameters.")
-    
-    # number of files to be downloaded 
+        gscript.fatal(_("TNM API ERROR or Zero tiles available for given input parameters."))
+
+    # number of files to be downloaded
     file_download_count = len(dwnld_url)
 
     # remove existing files from download lists
@@ -454,16 +410,16 @@ def main():
     for url in exist_dwnld_url:
         if url in dwnld_url:
             dwnld_url.remove(url)
-    
+
     # messages to user about status of files to be kept, removed, or downloaded
     if exist_zip_list:
-        exist_msg = "\n{0} of {1} files/archive(s) exist locally and will be used by module.".format(len(exist_zip_list), tiles_needed_count)
+        exist_msg = _("\n{0} of {1} files/archive(s) exist locally and will be used by module.").format(len(exist_zip_list), tiles_needed_count)
         gscript.message(exist_msg)
     if exist_tile_list:
-        exist_msg = "\n{0} of {1} files/archive(s) exist locally and will be used by module.".format(len(exist_tile_list), tiles_needed_count)
+        exist_msg = _("\n{0} of {1} files/archive(s) exist locally and will be used by module.").format(len(exist_tile_list), tiles_needed_count)
         gscript.message(exist_msg)
     if cleanup_list:
-        cleanup_msg = "\n{0} existing incomplete file(s) detected and removed. Run module again.".format(len(cleanup_list))
+        cleanup_msg = _("\n{0} existing incomplete file(s) detected and removed. Run module again.").format(len(cleanup_list))
         gscript.fatal(cleanup_msg)
 
     # formats JSON size from bites into needed units for combined file size
@@ -478,22 +434,21 @@ def main():
             total_size_str = str("{0:.2f}".format(total_size_float) + " GB")
     else:
         total_size_str = '0'
-    
+
     # Prints 'none' if all tiles available locally
     if TNM_file_titles:
         TNM_file_titles_info = "\n".join(TNM_file_titles)
     else:
         TNM_file_titles_info = 'none'
-    
+
     # Formatted return for 'i' flag
     if file_download_count <= 0:
-        data_info = "\n\nUSGS file(s) to download: NONE"
+        data_info = "USGS file(s) to download: NONE"
         if gui_product == 'nlcd':
             if tile_API_count != file_download_count:
                 if tiles_needed_count == 0:
                     nlcd_unavailable = "NLCD {0} data unavailable for input parameters".format(gui_subset)
                     gscript.fatal(nlcd_unavailable)
-        
     else:
         data_info = (
                      "USGS file(s) to download:",
@@ -509,16 +464,16 @@ def main():
                                                 srs=product_srs,
                                                 tile=TNM_file_titles_info)
     print data_info
-    
+
     if gui_i_flag:
-        gscript.info("To download USGS data, remove <i> flag, and rerun r.in.usgs.")
+        gscript.info(_("To download USGS data, remove <i> flag, and rerun r.in.usgs."))
         sys.exit()
-    
+
     # USGS data download process
     if file_download_count <= 0:
-        gscript.message("Extracting existing USGS Data...")
+        gscript.message(_("Extracting existing USGS Data..."))
     else:
-        gscript.message("Downloading USGS Data...")
+        gscript.message(_("Downloading USGS Data..."))
 
     TNM_count = len(dwnld_url)
     download_count = 0
@@ -562,7 +517,7 @@ def main():
                     download_count, TNM_count)
             gscript.info(file_complete)
         except urllib2.URLError:
-            gscript.fatal("USGS download request has timed out. Network or formatting error.")
+            gscript.fatal(_("USGS download request has timed out. Network or formatting error."))
         except StandardError:
             cleanup_list.append(local_file_path)
             if download_count:
@@ -600,8 +555,8 @@ def main():
                     cleanup_list.append(extracted_tile)
             except:
                 cleanup_list.append(extracted_tile)
-                gscript.fatal("Unable to locate or extract IMG file from ZIP archive.")
-    
+                gscript.fatal(_("Unable to locate or extract IMG file from ZIP archive."))
+
     # operations for extracted or complete files available locally
     for t in local_tile_path_list:
         # create variables for use in GRASS GIS import process
@@ -615,15 +570,16 @@ def main():
             gscript.run_command('r.import', input=t, output=LT_layer_name,
                                 resolution='value', resolution_value=product_resolution,
                                 extent="region", resample=product_interpolation)
-            if not gui_k_flag:
+            # do not remove by default with NAIP, there are no zip files
+            if gui_product != 'naip' or not gui_k_flag:
                 cleanup_list.append(t)
         except CalledModuleError:
             in_error = ("Unable to import '{0}'").format(LT_file_name)
             gscript.fatal(in_error)
 
-    # if control variables match and multiple files need to be patched, 
+    # if control variables match and multiple files need to be patched,
     # check product resolution, run r.patch
-    
+
     # Check that downloaded files match expected count
     completed_tiles_count = len(local_tile_path_list)
     if completed_tiles_count == tiles_needed_count:
@@ -633,21 +589,37 @@ def main():
                 # set the resolution
                 if product_resolution:
                     gscript.run_command('g.region', res=product_resolution, flags='a')
-                gscript.run_command('r.patch', input=patch_names,
-                                    output=gui_output_layer)
+                if gui_product == 'naip':
+                    for i in ('1', '2', '3', '4'):
+                        patch_names_i = [name + '.' + i for name in patch_names]
+                        gscript.run_command('r.patch', input=patch_names_i,
+                                            output=gui_output_layer + '.' + i)
+                else:
+                    gscript.run_command('r.patch', input=patch_names,
+                                        output=gui_output_layer)
                 gscript.del_temp_region()
                 out_info = ("Patched composite layer '{0}' added").format(gui_output_layer)
                 gscript.verbose(out_info)
                 # Remove files if 'k' flag
                 if not gui_k_flag:
-                    gscript.run_command('g.remove', type='raster',
-                                        name=patch_names, flags='f')
+                    if gui_product == 'naip':
+                        for i in ('1', '2', '3', '4'):
+                            patch_names_i = [name + '.' + i for name in patch_names]
+                            gscript.run_command('g.remove', type='raster',
+                                                name=patch_names_i, flags='f')
+                    else:
+                        gscript.run_command('g.remove', type='raster',
+                                            name=patch_names, flags='f')
             except CalledModuleError:
                 gscript.fatal("Unable to patch tiles.")
         elif completed_tiles_count == 1:
-            gscript.run_command('g.rename', raster=(patch_names[0], gui_output_layer))
+            if gui_product == 'naip':
+                for i in ('1', '2', '3', '4'):
+                    gscript.run_command('g.rename', raster=(patch_names[0] + '.' + i, gui_output_layer + '.' + i))
+            else:
+                gscript.run_command('g.rename', raster=(patch_names[0], gui_output_layer))
         temp_down_count = "\n{0} of {1} tile/s succesfully imported and patched.".format(completed_tiles_count,
-                          tiles_needed_count)
+                                                                                         tiles_needed_count)
         gscript.info(temp_down_count)
     else:
         gscript.fatal("Error downloading files. Please retry.")
@@ -661,11 +633,22 @@ def main():
     if gui_product == 'ned':
         gscript.run_command('r.colors', map=gui_output_layer, color='elevation')
 
+    # composite NAIP
+    if gui_product == 'naip':
+        gscript.use_temp_region()
+        gscript.run_command('g.region', raster=gui_output_layer + '.1')
+        gscript.run_command('r.composite', red=gui_output_layer + '.1',
+                            green=gui_output_layer + '.2', blue=gui_output_layer + '.3',
+                            output=gui_output_layer)
+        gscript.del_temp_region()
+
+
 def cleanup():
     # Remove files in cleanup_list
     for f in cleanup_list:
         if os.path.exists(f):
             gscript.try_remove(f)
+
 
 if __name__ == "__main__":
     options, flags = gscript.parser()
